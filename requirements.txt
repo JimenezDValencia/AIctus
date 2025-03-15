@@ -1,0 +1,11 @@
+pandas
+numpy
+matplotlib
+plotly
+seaborn
+statsmodels
+scipy
+scikit-learn
+xgboost
+catboost
+ctgan
