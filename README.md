@@ -6,19 +6,8 @@ Aitus_modelos.ipynb, carga el dataset balanceado, prepara los datos con One Hot 
 
 Estos notebooks pueden ser utilizados como base para experimentar distintas otras estrategias de preprocesamiento o hiperparámetros de algoritmos.
 
-Requisitos
-Python 3.x
-Jupyter Notebook
-Las siguientes librerías:
-pandas
-numpy
-matplotlib
-seaborn
-scikit-learn
-statsmodels
-CTGAN
-joblib
-
+Requisitos en requirements.txt
 
 Contribución
 Este repositorio está pensado para servir como base para la investigación y experimentación. Se invita a contribuir con nuevas estrategias de preprocesamiento o mejoras en el entrenamiento y evaluación de modelos.
+
