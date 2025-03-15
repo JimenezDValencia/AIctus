@@ -16,9 +16,8 @@ matplotlib
 seaborn
 scikit-learn
 statsmodels
-CTGAN (o sdv, según corresponda)
+CTGAN
 joblib
-Uso
 
 
 Contribución
