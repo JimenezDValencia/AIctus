@@ -8,6 +8,6 @@ Estos notebooks pueden ser utilizados como base para experimentar distintas otra
 
 Requisitos en requirements.txt
 
-Contribución
+Contribución:
 Este repositorio está pensado para servir como base para la investigación y experimentación. Se invita a contribuir con nuevas estrategias de preprocesamiento o mejoras en el entrenamiento y evaluación de modelos.
 
