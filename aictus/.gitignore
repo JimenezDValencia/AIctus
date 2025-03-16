@@ -1,0 +1,16 @@
+# Ignorar archivos de dependencias
+node_modules/
+__pycache__/
+venv/
+env/
+*.pyc
+.DS_Store
+
+# Ignorar archivos de entorno
+*.env
+
+# Ignorar archivos de compilación de React
+frontend/build/
+
+# Ignorar archivos de modelos entrenados
+backend/models/*.pkl
