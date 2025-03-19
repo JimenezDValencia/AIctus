@@ -1,0 +1,869 @@
+---
+title: "EDA stroke.csv"
+author: "Jiménez D. Valencia"
+date: "`r Sys.Date()`"
+output: 
+  prettydoc::html_pretty:
+    toc: yes
+    theme: architect
+    highlight: github
+    math: katex
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, comment = NA)
+
+```
+
+***
+
+
+```{r}
+library(dplyr)    
+library(ggplot2)  
+library(corrplot) 
+library(plotly)
+library(gt)
+library(broom)
+library(gridExtra)
+library(knitr)
+library(kableExtra)
+library(RColorBrewer)
+
+```
+***
+
+# [**Primeros vistazos**]{style="color:#1489fd"} 
+```{r}
+df <- read.csv("stroke.csv", stringsAsFactors = F)
+head(df)
+```
+
+12 variables. La variable ID pareciera ser aleatoria y sin ningún valor para predecir ictus.
+
+***
+
+**Estructura y tipo de datos:**
+```{r}
+# Estructura
+str(df)
+```
+5110 pacientes. variable bmi como chr, pareciera ser erróneo tenerlo con ese tipo de dato. Es preferible cambiarlo a numérico.
+
+
+```{r}
+# Convierto bmi a numérico
+df$bmi <- as.numeric(df$bmi)
+
+df <- df %>% select(-id) #aprovecho a retirar ID porque no ofrece información predictiva
+```
+***
+
+**Conteo de valores nulos:**
+```{r}
+# Conteo de valores NA por columna
+df$bmi[df$bmi == "N/A"] <- NA
+colSums(is.na(df))
+```
+# [**Proporciones y distribuciones de variables**]{style="color:#1489fd"} 
+
+## Proporción ictus(+) vs ictus(-)
+```{r}
+# distribución de la variable 'stroke'
+stroke_counts <- table(df$stroke)
+
+# porcentajes para cada categoría
+porcentajes <- round(100 * stroke_counts / sum(stroke_counts), 1)
+
+# etiquetas
+labels <- paste0(names(stroke_counts), " (", as.numeric(stroke_counts), ") - ", porcentajes, "%")
+
+# gráfico de tortas
+pie(stroke_counts, 
+    labels = labels, 
+    col = c("#66b3ff", "#ff9999"), 
+    main = "Proporción de pacientes con (1) y sin (0) ACV",
+    init.angle = 90)
+
+```
+
+## Proporción HTA/cardiopatía(+) vs HTA/cardiopatía(-)
+```{r}
+par(mfrow = c(1, 2))
+
+# Gráfico para 'hypertension'
+hypertension_counts <- table(df$hypertension)
+porcentajes_h <- round(100 * hypertension_counts / sum(hypertension_counts), 1)
+labels_h <- paste0(names(hypertension_counts), " (", as.numeric(hypertension_counts), ") - ", porcentajes_h, "%")
+pie(hypertension_counts, 
+    labels = labels_h, 
+    col = c("#66b3ff", "#ff9999"), 
+    main = "con (1) y sin (0) Hipertensión",
+    init.angle = 90)
+
+# Gráfico para 'heart_disease'
+heart_counts <- table(df$heart_disease)
+porcentajes_hd <- round(100 * heart_counts / sum(heart_counts), 1)
+labels_hd <- paste0(names(heart_counts), " (", as.numeric(heart_counts), ") - ", porcentajes_hd, "%")
+pie(heart_counts, 
+    labels = labels_hd, 
+    col = c("#66b3ff", "#ff9999"), 
+    main = "con (1) y sin (0) Cardiopatía",
+    init.angle = 90)
+
+```
+
+***
+
+## Distribución del resto de variables
+
+```{r}
+
+cols_excluir <- c("hypertension", "heart_disease", "stroke")
+
+numeric_cols <- setdiff(names(df)[sapply(df, is.numeric)], cols_excluir)
+categorical_cols <- setdiff(names(df)[sapply(df, function(x) is.factor(x) || is.character(x))], cols_excluir)
+
+# --- Histogramas para variables numéricas ---
+plots_num <- lapply(numeric_cols, function(col) {
+  ggplot(df, aes_string(x = col)) +
+    geom_histogram(bins = 20, fill = "skyblue", color = "white") +
+    labs(title = paste("Histograma de", col), x = col) +
+    theme_minimal()
+})
+
+# Organizar los histogramas en una grilla 
+grid.arrange(grobs = plots_num, ncol = 2, top = "Histograma de Variables Numéricas")
+
+# --- Gráficos de barras para variables categóricas ---
+plots_cat <- lapply(categorical_cols, function(col) {
+  ggplot(df, aes_string(x = col)) +
+    geom_bar(fill = "purple") +
+    labs(title = paste("Distribución de", col)) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+})
+
+# Imprimir cada gráfico de barras individualmente o agruparlos
+for(p in plots_cat) {
+  print(p)
+}
+
+```
+```{r}
+numerical_features <- c("age", "avg_glucose_level", "bmi")
+summary(df[, numerical_features])
+
+```
+- **age:**
+
+La media es menor que la mediana -> Está sesgado hacia la izquierda.
+
+- **avg_glucose_level:**
+
+La media es mayor que la mediana -> Está sesgado hacia la derecha.
+
+- **bmi:**
+
+La media es mayor que la mediana -> Está sesgado hacia la derecha.
+
+Me llama la atención el bmi mínimo: 10.3
+y el bmi máximo: 97.60
+Sobretodo este último, es un valor bastante raro desde el punto de vista clínico y estadístico. Debo estudiarlos más adelante
+
+***
+
+### Estudio de normalidad de variables contínuas
+*Variables continuas parecieran no seguir distribución normal*
+
+**Se puede observar mejor en un Q-Q plot:**
+
+```{r}
+par(mfrow = c(1, 3))
+# Q-Q plot para la variable 'avg_glucose_level'
+qqnorm(df$avg_glucose_level, main = "Q-Q Plot para glicemia promedio")
+qqline(df$avg_glucose_level, col = "red")
+
+# Q-Q plot para la variable 'bmi'
+qqnorm(df$bmi, main = "Q-Q Plot para IMC")
+qqline(df$bmi, col = "red")
+
+# Q-Q plot para la variable 'age'
+qqnorm(df$age, main = "Q-Q Plot para edad")
+qqline(df$age, col = "red")
+```
+
+***
+
+**Prueba de Shapiro-wilk:**
+```{r}
+# Función para aplicar Shapiro-Wilk controlando el tamaño de la muestra
+aplicar_shapiro <- function(x) {
+  datos <- na.omit(x)
+  n <- length(datos)
+  
+  if(n < 3) {
+    cat("No hay suficientes observaciones (", n, ") para realizar el test de Shapiro-Wilk.\n")
+    return(NULL)
+  } else if(n > 5000) {
+    set.seed(123)  # para reproducibilidad
+    datos <- sample(datos, 5000)
+    cat("Se tomó una muestra aleatoria de 5000 observaciones para el test de Shapiro-Wilk.\n")
+  }
+  
+  test <- shapiro.test(datos)
+  return(test)
+}
+
+# Lista de variables a evaluar
+numeric_vars <- c("age", "avg_glucose_level", "bmi")
+
+for (var in numeric_vars) {
+  cat("📊 **Shapiro-Wilk para", var, ":**\n")
+  test <- aplicar_shapiro(df[[var]])
+  if (!is.null(test)) {
+    cat("   - Estadístico W:", round(test$statistic, 4), "\n")
+    cat("   - p-value:", round(test$p.value, 4), "\n")
+    
+    if (test$p.value < 0.05) {
+      cat("   ❌ Se rechaza H0:", var, "**no sigue** una distribución normal.\n\n")
+    } else {
+      cat("   ✅ No se rechaza H0:", var, "**podría seguir** una distribución normal.\n\n")
+    }
+  }
+}
+
+```
+
+*Prueba de Shapiro-wilk respalda lo observado*
+
+***
+
+# Búsqueda de outliers
+
+## Boxplots de variables continuas
+
+```{r}
+# Lista de variables a evaluar
+variables <- c("avg_glucose_level", "bmi", "age")
+
+for (var in variables) {
+  # Calcular Q1, Q3 e IQR
+  Q1 <- quantile(df[[var]], 0.25, na.rm = TRUE)
+  Q3 <- quantile(df[[var]], 0.75, na.rm = TRUE)
+  IQR_value <- Q3 - Q1
+  
+  # Calcular límites para detectar outliers
+  lower_bound <- Q1 - 1.5 * IQR_value
+  upper_bound <- Q3 + 1.5 * IQR_value
+  
+  # Filtrar outliers
+  outliers <- df[df[[var]] < lower_bound | df[[var]] > upper_bound, ]
+  cat(var, "- Número de outliers:", nrow(outliers), "\n")
+  
+  # Graficar diagrama de caja
+  boxplot(df[[var]],
+          main = paste("Boxplot de", var),
+          col = "skyblue",
+          xlab = var)
+}
+
+```
+
+***
+
+## Violinplots de variables continuas
+```{r}
+
+# Asegurar que stroke es un factor con orden "0" y "1"
+df$stroke <- factor(df$stroke, levels = c("0", "1"))
+
+# Lista de variables a evaluar
+variables <- c("avg_glucose_level", "bmi", "age")
+
+for (col in variables) {
+  p <- ggplot(df, aes_string(x = "stroke", y = col, fill = "stroke")) +
+    geom_violin() +
+    scale_fill_manual(values = c("0" = "#66b3ff", "1" = "#ff9999")) +
+    labs(title = paste("Distribución de", col, "según ACV"),
+         x = "ACV",
+         y = col) +
+    theme_minimal() 
+  
+  print(p)
+}
+
+```
+
+***
+
+## Valores Atípicos de IMC
+
+**Observo características de aquellos con bmi menores a 11 y mayores a 70:**
+```{r}
+
+# Filtrar casos extremos: bmi > 70 o bmi < 11
+subset_df <- df %>% filter(bmi > 70 | bmi < 11)
+
+# Tabla
+subset_df %>% 
+  kable(caption = "Características de IMC extremos") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+```
+
+
+```{r}
+df$stroke <- factor(df$stroke, levels = c("0", "1"))
+
+p <- ggplot(df, aes(x = age, y = bmi, color = stroke)) +
+  geom_point() +
+  scale_color_manual(values = c("0" = "#66b3ff", "1" = "#ff9999")) +
+  geom_hline(yintercept = 97.6, color = "red", linetype = "dashed") +
+  geom_hline(yintercept = 92.0, color = "red", linetype = "dashed") +
+  geom_hline(yintercept = 71.9, color = "red", linetype = "dashed") +
+  geom_hline(yintercept = 78.0, color = "red", linetype = "dashed") +
+  geom_hline(yintercept = 10.3, color = "red", linetype = "dashed") +
+  ggtitle("IMC vs edad") +
+  xlab("edad (años)") +
+  ylab("IMC (kg/m^2)") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = c(1, 1),
+        legend.justification = c(1, 1))
+
+# Indicar "IMC sospechoso"
+p <- p + annotate("text", 
+                  x = max(df$age, na.rm = TRUE), 
+                  y = 97.6, 
+                  label = "IMC sospechoso", 
+                  color = "red", 
+                  hjust = 1, 
+                  vjust = -0.5)
+
+print(p)
+
+```
+
+Decido retirar los IMC> 70... el IMC de 10.3 se eliminará luego, ya que retiraré a los menores de 5 años
+Esto se hará en la etapa de **Preprocesamiento**, pero lo haré en python, en el Jupyter Notebook 
+
+***
+
+# [**Pruebas de Asociación**]{style="color:#1489fd"} 
+
+*Como las variables continuas no siguen una distribución normal, utilizaré Mann-Whitney, que es una prueba no paramétrica.*
+
+## Prueba U de Mann-Whitney:
+
+
+```{r}
+variables <- c("age", "bmi", "avg_glucose_level")
+
+for (col in variables) {
+  # Dividir en grupos según la variable stroke
+  grupo_stroke_0 <- df[df$stroke == 0, col]
+  grupo_stroke_1 <- df[df$stroke == 1, col]
+  
+  # Aplicar el test de Wilcoxon (Mann-Whitney) con alternativa bilateral
+  test <- wilcox.test(grupo_stroke_0, grupo_stroke_1, alternative = "two.sided")
+  
+  cat("\n📊 **Prueba U de Mann-Whitney para", col, ":**\n")
+  cat("   - Estadístico W:", round(test$statistic, 4), "\n")
+  cat("   - p-value:", round(test$p.value, 6), "\n")
+  
+  if (test$p.value < 0.05) {
+    cat("   ✅ Diferencia significativa en", col, "entre grupos (stroke=0 vs stroke=1)\n")
+  } else {
+    cat("   ❌ No se detecta diferencia significativa en", col, "\n")
+  }
+}
+
+```
+
+Se observa relación entre las variables imc, glicemia promedio y edad con ACV.
+
+
+
+
+
+**Estudio la fuerza de esa relación con prueba de Spearmen y Kendall:**
+
+```{r}
+#primero omito los valores NA
+ df <- na.omit(df)
+```
+```{r}
+variables <- c("age", "bmi", "avg_glucose_level")
+
+for (col in variables) {
+  # Convertir 'stroke' a numérico sin modificar el data frame:
+  stroke_num <- as.numeric(as.character(df$stroke))
+  
+  # Calcular correlación de Spearman
+  spearman_result <- cor.test(df[[col]], stroke_num, method = "spearman")
+  # Calcular correlación de Kendall
+  kendall_result <- cor.test(df[[col]], stroke_num, method = "kendall")
+  
+  cat("\n🔎 **Correlación de", col, "con stroke**\n")
+  cat("   - Spearman: r =", round(spearman_result$estimate, 4), 
+      ", p-value =", format(spearman_result$p.value, digits = 6), "\n")
+  cat("   - Kendall:  τ =", round(kendall_result$estimate, 4), 
+      ", p-value =", format(kendall_result$p.value, digits = 6), "\n")
+  
+  if (spearman_result$p.value < 0.05) {
+    cat("   ✅", col, "tiene correlación significativa con stroke según Spearman.\n")
+  } else {
+    cat("   ❌ No hay correlación significativa de", col, "con stroke (Spearman).\n")
+  }
+  
+  if (kendall_result$p.value < 0.05) {
+    cat("   ✅", col, "tiene correlación significativa con stroke según Kendall.\n")
+  } else {
+    cat("   ❌ No hay correlación significativa de", col, "con stroke (Kendall).\n")
+  }
+}
+
+```
+
+***
+
+*Las variables binarias están bastante desbalanceadas, así que un chi-cuadrado no sería ideal, sino más bien un test de fisher*
+
+## Prueba exacta de Fisher
+
+```{r}
+# Crear tabla de contingencia para hipertensión vs ACV
+tabla_hipertension <- table(df$hypertension, df$stroke)
+fisher_hyper <- fisher.test(tabla_hipertension)
+
+# Crear tabla de contingencia para cardiopatía vs ACV
+tabla_heart <- table(df$heart_disease, df$stroke)
+fisher_heart <- fisher.test(tabla_heart)
+
+# Mostrar resultados
+cat("Resultados de la Prueba Exacta de Fisher:\n")
+cat("Hipertensión vs ACV:\n")
+cat(sprintf("Odds Ratio: %.4f, p-value: %.6f\n", fisher_hyper$estimate, fisher_hyper$p.value))
+cat("\nCardiopatía vs ACV:\n")
+cat(sprintf("Odds Ratio: %.4f, p-value: %.6f\n", fisher_heart$estimate, fisher_heart$p.value))
+
+```
+
+Los resultados de la prueba exacta de Fisher muestran que tanto la HTA 
+como la cardiopatía están fuertemente asociadas con la presencia de ACV. 
+
+- Los pacientes con HTA tienen aproximadamente 4.44 veces mayor probabilidad de sufrir un ACV 
+en comparación con aquellos sin HTA. 
+
+- Los pacientes con cardiopatía tienen aproximadamente 5.24 veces mayor probabilidad
+de sufrir un ACV en comparación con aquellos sin cardiopatía.
+
+***
+
+## Prueba de Chi-Cuadrado:
+**Además se medirá fuerza de relación con V de Cramér**
+```{r}
+# Lista de variables categóricas a evaluar
+variables <- c("smoking_status", "ever_married", "Residence_type", "work_type")
+
+for (var in variables) {
+  cat("Variable:", var, "\n")
+  
+  # Crear la tabla de contingencia
+  tabla <- table(df[[var]], df$stroke)
+  cat("Tabla de contingencia:\n")
+  print(tabla)
+  
+  # Aplicar la prueba de Chi-Cuadrado
+  test <- chisq.test(tabla)
+  chi2 <- test$statistic
+  p_value <- test$p.value
+  dof <- test$parameter
+  
+  cat(sprintf("Chi2: %.4f, p-value: %.6f, dof: %d\n", chi2, p_value, dof))
+  cat("Tabla de frecuencias esperadas:\n")
+  print(test$expected)
+  
+  # Calcular Cramér's V:
+  # V = sqrt(chi2 / (n * min(r-1, c-1)))
+  n <- sum(tabla)  # total de observaciones
+  r <- nrow(tabla)
+  c <- ncol(tabla)
+  min_dim <- min(r - 1, c - 1)
+  if (min_dim > 0) {
+    cramers_v <- sqrt(chi2 / (n * min_dim))
+  } else {
+    cramers_v <- NA
+  }
+  cat(sprintf("Cramér's V: %.4f\n", cramers_v))
+  
+  cat(strrep("-", 50), "\n\n")
+}
+
+
+```
+
+
+Las pruebas de Chi-cuadrado muestran una relación significativa entre la presencia de
+ACV y el estado de fumador, el estado civil de casado y el tipo de empleo. Sin embargo, las pruebas
+V de Cramér (Tabla 7) sugieren que, aunque existan relaciones significativas entre estas variables
+y ACV, su relación es débil, por lo que su influencia real sobre el ictus puede ser baja. En el caso
+del tipo de residencia, prácticamente no tiene relación con la presencia de ACV.
+
+***
+
+## Efecto moderador de la edad en las asociaciones
+
+### Proporción de casados según edad
+
+```{r}
+# Calcular la proporción de 'Yes' en ever_married por edad
+df_proportion <- df %>%
+  group_by(age) %>%
+  summarise(ever_married = mean(ever_married == "Yes")) %>%
+  ungroup()
+
+# Graficar la proporción de casados según la edad
+ggplot(df_proportion, aes(x = age, y = ever_married)) +
+  geom_line(color = "steelblue") +
+  labs(title = "Proporción de Casados según la Edad",
+       x = "Edad",
+       y = "Proporción Casados") +
+  theme_minimal()
+
+```
+
+La aparente relación entre el estado civil y la presencia de ACV está mediada por la edad, ya que,
+como se observa en el gráfico, hay un cierto valor de edad en donde la proporción
+de casados se dispara. 
+Y, como ya se observó anteriormente, hay una relación estrecha entre la
+edad y presencia de ACV.
+
+### Proporción del tipo de empleo según edad
+
+```{r}
+df$stroke <- as.numeric(as.character(df$stroke))
+df_work_acv <- df %>%
+  group_by(work_type) %>%
+  summarise(proporcion_ACV = mean(stroke)) %>%
+  ungroup()
+
+print(df_work_acv)
+
+
+```
+
+
+
+```{r}
+# Crear df_merged: agrupar por edad y tipo de trabajo y calcular la proporción
+df_merged <- df %>%
+  group_by(age, work_type) %>%
+  summarise(count = n()) %>%
+  group_by(age) %>%
+  mutate(proportion = count / sum(count)) %>%
+  ungroup()
+
+# Mapa de colores personalizado
+custom_palette <- c(
+  "children" = "red",
+  "Self-employed" = "#ff7f0e",  # Color original
+  "Private" = "#2ca02c",        # Color original
+  "Never_worked" = "blue",
+  "Govt_job" = "#9467bd"        # Color original
+)
+
+# Graficar con los colores personalizados
+ggplot(df_merged, aes(x = age, y = proportion, color = work_type)) +
+  geom_line() +
+  scale_color_manual(values = custom_palette) +
+  labs(
+    title = "Proporción de cada tipo de trabajo según la Edad",
+    x = "Edad (años)",
+    y = "Proporción",
+    color = "work_type"
+  ) +
+  theme_minimal()
+
+
+```
+
+La edad también tiene efecto moderador entre tipo de empleo y acv:
+Se observa en la tabla, que los trabajadores independientes tienen mayor proporción de ACV que el resto de los tipos de empleo. 
+También se observa que aquellos que nunca han trabajado, ninguno ha tenido ACV. 
+Pero, al visualizarlo en el gráfico de proporción de cada tipo de trabajo según la edad, 
+se aprecia claramente que la mayor proporción de trabajadores independientes se encuentra en la mayoría de edad, 
+mientras que aquellos que nunca han trabajado se encuentran en el rango etario de adolescente y adulto joven.
+
+
+**Ajustaré un modelo de regresión logística incluyendo un término de interacción entre la edad y el resto de variables:**
+- **Tipo de empleo:**
+```{r}
+# Convertir variables: work_type a factor y stroke a entero (binario)
+df$work_type <- as.factor(df$work_type)
+#df$stroke <- as.integer(df$stroke)
+
+# Ajustar el modelo de regresión logística
+model <- glm(stroke ~ work_type + age, data = df, family = binomial(link = "logit"),
+             control = list(maxit = 100))
+
+# Extraer coeficientes del modelo
+coefs <- summary(model)$coefficients
+
+# Calcular Odds Ratios (transformando los coeficientes a la escala de OR)
+odds_ratios <- exp(coefs[, "Estimate"])
+
+# Calcular intervalos de confianza al 95%
+ci <- exp(confint(model))  # alternativamente, puedes usar confint.default(model)
+
+# Crear tabla de resultados con Odds Ratio, intervalos de confianza y p-value
+results <- data.frame(
+  Odds_Ratio = odds_ratios,
+  Lower_95  = ci[, 1],
+  Upper_95  = ci[, 2],
+  p_value   = coefs[, "Pr(>|z|)"]
+)
+
+print(results)
+
+
+```
+
+- **Estado civil:**
+
+```{r}
+# Convertir variables: 'ever_married' como factor y 'stroke' como entero (0/1)
+df$ever_married <- as.factor(df$ever_married)
+#df$stroke <- as.integer(df$stroke)
+
+# Ajustar el modelo de regresión logística
+model <- glm(stroke ~ ever_married + age, data = df, family = binomial(link = "logit"))
+
+# Extraer coeficientes y calcular Odds Ratios
+coefs <- summary(model)$coefficients
+odds_ratios <- exp(coefs[, "Estimate"])
+
+# Calcular intervalos de confianza al 95%
+ci <- exp(confint(model))  # Utiliza el perfil de verosimilitud; alternativamente, confint.default(model)
+
+# Crear tabla de resultados con Odds Ratio, intervalos de confianza y p-value
+results <- data.frame(
+  `Odds Ratio` = odds_ratios,
+  `[0.025]`   = ci[, 1],
+  `[0.975]`   = ci[, 2],
+  `P>|z|`     = coefs[, "Pr(>|z|)"]
+)
+
+print(results)
+
+
+```
+
+Tras ajustar el modelo de regresión logística incluyendo un término de interacción entre la edad y
+cada variable de interés, se observa que ni el estado civil, ni el tipo de empleo
+influyen de manera determinante en el riesgo de ACV, evidenciados por altos p-valores y amplios
+intervalos de confianza. Por otro lado, se sigue respaldando a la edad como un factor determinante
+
+***
+
+### Probabilidad de ACV según HTA/Cardiopatía/Estatus Fumador vs Edad
+
+```{r}
+library(ggplot2)
+library(RColorBrewer)
+
+analyze_variable <- function(var_name, custom_palette = NULL) {
+  # Asegurarse de que la variable de interés sea factor (sin modificar stroke)
+  if (!is.factor(df[[var_name]])) {
+    df[[var_name]] <<- as.factor(df[[var_name]])
+  }
+  
+  # Crear un rango de edad (desde el mínimo hasta el máximo)
+  age_range <- seq(min(df$age, na.rm = TRUE), max(df$age, na.rm = TRUE), by = 1)
+  
+  # Obtener los niveles de la variable
+  var_levels <- levels(df[[var_name]])
+  
+  # Crear un data frame de predicción con todas las combinaciones de edad y niveles de la variable
+  prediction_data <- expand.grid(age = age_range, tmp = var_levels)
+  names(prediction_data)[names(prediction_data) == "tmp"] <- var_name
+  
+  # Ajustar el modelo de regresión logística
+  # Se utiliza la fórmula: stroke ~ age + factor(var_name)
+  formula_str <- paste("stroke ~ age + factor(", var_name, ")", sep = "")
+  model <- glm(as.formula(formula_str), data = df, family = binomial(link = "logit"))
+  
+  # Generar probabilidades predichas (en la escala de respuesta, ya que 'stroke' se asume correcto)
+  prediction_data$predicted_prob <- predict(model, newdata = prediction_data, type = "response")
+  
+  # Definir paleta de colores personalizada si no se provee
+  if (is.null(custom_palette)) {
+    if (length(var_levels) == 2) {
+      custom_palette <- c("0" = "#66b3ff", "1" = "#ff9999")
+    } else {
+      # Si la variable tiene más de dos niveles, usar la paleta Set1 de RColorBrewer
+      colors <- brewer.pal(n = min(9, length(var_levels)), name = "Set1")
+      if (length(var_levels) > length(colors)) {
+        colors <- rep(colors, length.out = length(var_levels))
+      }
+      names(colors) <- var_levels
+      custom_palette <- colors
+    }
+  }
+  
+  # Graficar: Probabilidad predicha de Stroke vs edad, diferenciada por niveles de la variable
+  p <- ggplot(prediction_data, aes_string(x = "age", y = "predicted_prob", color = var_name)) +
+    geom_line(size = 1) +
+    labs(title = paste("Probabilidad Predicha de ACV según", var_name, "y Edad"),
+         x = "Edad",
+         y = "Probabilidad Predicha de Stroke",
+         color = var_name) +
+    scale_color_manual(values = custom_palette) +
+    theme_minimal() +
+    theme(panel.grid.major = element_line(color = "grey80", linetype = "dashed"),
+          plot.title = element_text(hjust = 0.5))
+  
+  print(p)
+}
+
+# Ejemplos de uso:
+# Se asume que df$stroke ya está correctamente codificada (sin modificaciones adicionales).
+analyze_variable("hypertension")
+analyze_variable("heart_disease")
+analyze_variable("smoking_status")
+
+```
+
+Se aprecia que la probabilidad de ACV aumenta con los esas variables independientemente de la edad.
+
+Añadiré la sombra de intervalo de confianza:
+
+```{r}
+analyze_variable <- function(var_name) {
+  # Asegurarte de que la variable sea factor
+  if (!is.factor(df[[var_name]])) {
+    df[[var_name]] <<- as.factor(df[[var_name]])
+  }
+  
+  # Crear un rango de edad (de mínimo a máximo, paso 1)
+  age_range <- seq(min(df$age, na.rm = TRUE), max(df$age, na.rm = TRUE), by = 1)
+  
+  # Obtener los niveles de la variable
+  var_levels <- levels(df[[var_name]])
+  
+  # Crear un dataframe de predicción con todas las combinaciones de edad y niveles de la variable
+  prediction_data <- expand.grid(
+    age = age_range, 
+    tmp = var_levels
+  )
+  names(prediction_data)[names(prediction_data) == "tmp"] <- var_name
+  
+  # Ajustar el modelo de regresión logística con glm()
+  # Forzamos la variable como factor para que sea equivalente a C(var_name) en Python
+  formula_str <- paste("stroke ~ age + factor(", var_name, ")", sep = "")
+  model <- glm(as.formula(formula_str), data = df, family = binomial(link = "logit"))
+  
+  # Calcular predicciones en la escala del vínculo (logit) y sus errores estándar
+  pred_link <- predict(model, newdata = prediction_data, type = "link", se.fit = TRUE)
+  
+  # Guardar valores en el dataframe de predicción
+  prediction_data$fit_link <- pred_link$fit      # predicción en escala logit
+  prediction_data$se_link  <- pred_link$se.fit   # error estándar en escala logit
+  
+  # Transformar a la escala de probabilidad con la función logística
+  # y calcular el IC del 95%
+  prediction_data$predicted_prob <- plogis(prediction_data$fit_link)
+  prediction_data$lower <- plogis(prediction_data$fit_link - 1.96 * prediction_data$se_link)
+  prediction_data$upper <- plogis(prediction_data$fit_link + 1.96 * prediction_data$se_link)
+  
+  # Definir paleta de colores
+  # Si la variable solo tiene 2 niveles ("0" y "1"), se usa una paleta fija.
+  # Si tiene más niveles (p.ej. smoking_status), usaremos brewer.pal para asignar colores.
+  if (length(var_levels) == 2) {
+    custom_palette <- c("0" = "#66b3ff", "1" = "#ff9999")
+  } else {
+    # Para más niveles, seleccionamos una paleta "Set1"
+    colors <- brewer.pal(n = min(9, length(var_levels)), name = "Set1")
+    if (length(var_levels) > length(colors)) {
+      colors <- rep(colors, length.out = length(var_levels))
+    }
+    names(colors) <- var_levels
+    custom_palette <- colors
+  }
+  
+  # Graficar los resultados con ggplot2
+  # Se dibuja la línea y se sombrea el intervalo de confianza con geom_ribbon()
+  p <- ggplot(prediction_data, 
+              aes_string(x = "age", y = "predicted_prob", 
+                         color = var_name, fill = var_name, group = var_name)) +
+    geom_line(size = 1) +
+    geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) +
+    scale_color_manual(values = custom_palette) +
+    scale_fill_manual(values = custom_palette) +
+    labs(title = paste("Probabilidad Predicha de ACV según", var_name, "y Edad"),
+         x = "Edad",
+         y = "Probabilidad Predicha de Stroke",
+         color = var_name) +
+    theme_minimal() +
+    theme(
+      panel.grid.major = element_line(color = "grey80", linetype = "dashed"),
+      plot.title = element_text(hjust = 0.5)
+    )
+  
+  print(p)
+}
+
+# Ejemplos de uso:
+analyze_variable("hypertension")
+analyze_variable("heart_disease")
+analyze_variable("smoking_status")
+
+```
+
+
+
+En los gráficos de análisis de predicción de probabilidades condicionales mediante regresión
+logística, se observa que la probabilidad de ACV son mayores en los pacientes con
+hipertensión, cardiopatías y fumadores, independientemente de la edad.
+Aunque es menos notorio en el estatus de fumador considerando el intervalo de confianza
+
+***
+
+# [**Identificación del mecanismo subyacente de los valores nulos**]{style="color:#1489fd"} 
+
+## Pruebas MCAR
+
+### Jamshidian Jalal
+
+```{r}
+
+
+```
+
+## Pruebas MAR
+
+### Kolmogorov-Smirnov y Mann-Whitney
+
+```{r}
+
+
+```
+
+### Chi-cuadrado
+```{r}
+
+
+```
+
+**Las pruebas anteriores se muestran en el notebook *analisis_nulos.ipybn*, en donde se sugiere MAR**
+
+***
+
+**Continuación:** AIctus_preprocesamiento.ipynb
+
+
+
+
+
