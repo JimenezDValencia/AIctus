@@ -1,6 +1,6 @@
 Este repositorio contiene:
 # 🏥 **Aplicación AIctus**:
-Más información dentro de la carpeta AIctus.
+Información sobre la app, así como las instrucciones de como clonar el repositorio, dentro de la carpeta AIctus.
 
 # 📓 Notebooks:
 Estos Notebooks pueden servir como base para la experimentación con distintas estrategias de preprocesamiento y ajuste de hiperparámetros en la predicción de accidente cerebrovascular (ACV):
