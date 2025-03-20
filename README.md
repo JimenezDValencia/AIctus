@@ -9,7 +9,8 @@ Estos Notebooks pueden servir como base para la experimentación con distintas e
   - ## En carpeta eda, se encuentran los ficheros de análisis que sirven de base para la toma de decisiones en preprocesamiento y modelamiento:
     - **eda_stroke.Rmd**, Análisis estadístico de datos. En R markdown. 
     - **analisis_nulos.ipynb**, Se intenta identificar el mecanismo subyacente de la ausencia de datos. 
-
+---
+*Más información sobre la metodología, resultados y discusiones en el artículo jimenez_ml_ictus.pdf*
 ---
 ⭐ **Contribución**:
 Este repositorio está pensado para servir como base para la investigación y experimentación. Se invita a contribuir con nuevas estrategias de preprocesamiento o mejoras en el entrenamiento y evaluación de modelos.
